@@ -139,8 +139,8 @@
         </div>
 
         <!-- VexFlow Container -->
-        <div id="vexflow-wrapper" class="w-full h-full flex items-center justify-center overflow-hidden">
-            <div id="vexflow-container"></div>
+        <div id="vexflow-wrapper" class="w-full h-full flex items-center justify-center overflow-hidden p-2">
+            <div id="vexflow-container" class="w-full h-full flex justify-center items-center"></div>
         </div>
         
         <!-- Fallback -->
@@ -318,31 +318,33 @@
             try {
                 const { Renderer, Stave, StaveNote, TabStave, TabNote, Formatter, Voice, Accidental } = Vex.Flow;
                 
-                const wrapper = document.getElementById('vexflow-wrapper');
-                const w = wrapper.clientWidth;
-                const h = wrapper.clientHeight;
+                // FIXED DIMENSIONS FOR SCALING
+                // We define a "virtual canvas" where we know everything fits perfectly.
+                // 320px wide, 250px high.
+                const baseW = 320;
+                const baseH = 250; 
 
                 const renderer = new Renderer(container, Renderer.Backends.SVG);
-                renderer.resize(w, h);
+                renderer.resize(baseW, baseH);
                 const ctx = renderer.getContext();
                 
-                // Centering
+                // Center the staves in the virtual box
+                // Stave width 260 leaves 30px margin on sides
                 const staveWidth = 260;
-                const x = (w - staveWidth) / 2;
-                // Calculate vertical center
-                const centerY = h / 2;
+                const x = (baseW - staveWidth) / 2;
                 
-                // Standard: Move up
-                const stave = new Stave(x, centerY - 80, staveWidth);
+                // Vertical spacing
+                // UPDATED: Standard stave at y=10 (was 30), Tab stave at y=110 (was 130)
+                // This shifts everything UP by 20px to prevent bottom clipping
+                const stave = new Stave(x, 10, staveWidth);
                 stave.addClef("treble");
                 stave.setContext(ctx).draw();
                 
-                // Tab: Move down
-                const tabStave = new TabStave(x, centerY + 20, staveWidth);
+                const tabStave = new TabStave(x, 110, staveWidth);
                 tabStave.addClef("tab");
                 tabStave.setContext(ctx).draw();
 
-                // Notes (Transposed for Guitar: +1 Octave visual)
+                // Notes
                 const writtenOctave = info.octave + 1; 
                 const vfKey = `${info.name.toLowerCase()}/${writtenOctave}`;
                 
@@ -372,6 +374,16 @@
 
                 voice.draw(ctx, stave);
                 tabVoice.draw(ctx, tabStave);
+
+                // RESPONSIVE SCALING MAGIC
+                // Set viewBox to the base dimensions so CSS can scale it
+                const svg = container.querySelector('svg');
+                if (svg) {
+                    svg.setAttribute('viewBox', `0 0 ${baseW} ${baseH}`);
+                    svg.style.width = '100%';
+                    svg.style.height = '100%';
+                    svg.style.maxHeight = '100%'; // Ensure it respects container height
+                }
 
             } catch(e) {
                 console.error("Render fail", e);
@@ -541,4 +553,3 @@
     </script>
 </body>
 </html>
-
