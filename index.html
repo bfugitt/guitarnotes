@@ -11,13 +11,14 @@
         body {
             overscroll-behavior: none;
             touch-action: manipulation;
+            overflow: hidden; /* Prevent global scroll */
         }
         
         /* --- Piano Styling --- */
         .piano-wrapper {
             position: relative;
             width: 100%;
-            height: 100%;
+            height: 120px;
             display: flex;
         }
         .white-key {
@@ -31,22 +32,28 @@
             display: flex;
             align-items: flex-end;
             justify-content: center;
-            padding-bottom: 10px;
+            padding-bottom: 8px;
             font-weight: bold;
             color: #cbd5e1;
             cursor: pointer;
             font-size: 14px;
+            user-select: none;
         }
         .white-key.active {
             background: #3b82f6 !important;
             color: white;
             box-shadow: inset 0 -4px 0 #1d4ed8;
         }
+        .white-key.disabled {
+            background: #f1f5f9;
+            color: #e2e8f0;
+            pointer-events: none;
+        }
         .black-key {
             position: absolute;
             top: 0;
             height: 60%;
-            width: 10%; /* Relative width */
+            width: 10%; 
             background: #1e293b;
             z-index: 10;
             border-bottom-left-radius: 4px;
@@ -58,14 +65,14 @@
             background: #2563eb !important;
             box-shadow: 0 0 10px #2563eb;
         }
+        .black-key.disabled {
+            background: #cbd5e1;
+            pointer-events: none;
+        }
         
-        /* Percentage-based positioning for 7 white keys */
-        /* Each white key is ~14.28% width */
-        .bk-cs { left: 10%; }  /* Between 1st and 2nd */
-        .bk-ds { left: 24.5%; } /* Between 2nd and 3rd */
-        .bk-fs { left: 53%; }   /* Between 4th and 5th */
-        .bk-gs { left: 67.5%; } /* Between 5th and 6th */
-        .bk-as { left: 81.5%; } /* Between 6th and 7th */
+        /* Key Positioning */
+        .bk-cs { left: 10%; } .bk-ds { left: 24.5%; } 
+        .bk-fs { left: 53%; } .bk-gs { left: 67.5%; } .bk-as { left: 81.5%; }
 
         /* --- Fretboard Styling --- */
         .string-line {
@@ -73,19 +80,20 @@
             left: 0; right: 0; top: 50%;
             background: #94a3b8;
             pointer-events: none;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+            box-shadow: 0 1px 1px rgba(0,0,0,0.2);
         }
         .fret-cell {
             position: relative;
             border-right: 1px solid #cbd5e1;
             cursor: pointer;
+            /* Flex basis will handle width */
         }
         .nut {
             background-color: #f1f5f9;
             border-right: 4px solid #475569;
         }
         .fret-marker {
-            width: 18px; height: 18px;
+            width: 16px; height: 16px;
             border-radius: 50%;
             margin: auto;
             transition: transform 0.1s;
@@ -93,7 +101,18 @@
         .fret-cell.active .fret-marker {
             background-color: #3b82f6;
             box-shadow: 0 0 8px #3b82f6;
-            transform: scale(1.2);
+            transform: scale(1.3);
+        }
+
+        /* Octave Selector */
+        .oct-btn {
+            transition: all 0.2s;
+        }
+        .oct-btn.selected {
+            background-color: #3b82f6;
+            color: white;
+            font-weight: bold;
+            box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
         }
     </style>
 </head>
@@ -109,14 +128,11 @@
         <div id="loading-status" class="mt-6 text-xs text-slate-500 font-mono">Loading Notation Engine...</div>
     </div>
 
-    <!-- 1. TOP SECTION: NOTATION (Fixed Height) -->
-    <!-- We give this about 45% of the vertical space -->
-    <section class="h-[45%] bg-white w-full flex flex-col relative shadow-md z-10">
-        
-        <!-- Header Strip -->
+    <!-- 1. NOTATION SECTION (Fixed flex ratio) -->
+    <section class="flex-[4] bg-white w-full flex flex-col relative shadow-md z-10 min-h-0">
+        <!-- Header -->
         <div class="absolute top-0 left-0 w-full p-2 flex justify-between items-start z-20 pointer-events-none">
-            <span class="text-[10px] font-bold uppercase text-slate-400 bg-white/80 px-2 rounded">Standard & Tab</span>
-            <!-- Current Note Display -->
+            <span class="text-[10px] font-bold uppercase text-slate-400 bg-white/80 px-2 rounded backdrop-blur">Standard & Tab</span>
             <div id="note-display" class="bg-blue-600 text-white px-3 py-1 rounded-lg shadow font-bold text-xl min-w-[50px] text-center pointer-events-auto">
                 E
             </div>
@@ -127,7 +143,7 @@
             <div id="vexflow-container"></div>
         </div>
         
-        <!-- Fallback if VexFlow fails -->
+        <!-- Fallback -->
         <div id="notation-fallback" class="hidden absolute inset-0 flex items-center justify-center bg-slate-50">
             <div class="text-center">
                 <div class="text-6xl font-serif mb-2" id="fallback-char">𝅝</div>
@@ -136,28 +152,31 @@
         </div>
     </section>
 
-    <!-- 2. MIDDLE CONTROL BAR (Tabs) -->
+    <!-- 2. CONTROL TABS -->
     <div class="flex-none bg-slate-100 p-1 flex gap-1 border-b border-slate-200">
-        <button onclick="switchTab('guitar')" id="tab-guitar" class="flex-1 py-2 rounded text-sm font-bold transition-colors bg-white text-blue-600 shadow-sm">
-            FRETBOARD
+        <button onclick="switchTab('guitar')" id="tab-guitar" class="flex-1 py-2 rounded text-xs uppercase font-bold tracking-wider transition-colors bg-white text-blue-600 shadow-sm">
+            Fretboard
         </button>
-        <button onclick="switchTab('piano')" id="tab-piano" class="flex-1 py-2 rounded text-sm font-bold transition-colors text-slate-500 hover:bg-white/50">
-            KEYBOARD
+        <button onclick="switchTab('piano')" id="tab-piano" class="flex-1 py-2 rounded text-xs uppercase font-bold tracking-wider transition-colors text-slate-500 hover:bg-white/50">
+            Keyboard
         </button>
     </div>
 
-    <!-- 3. BOTTOM SECTION: INPUT (Fills remaining space) -->
-    <section class="flex-1 bg-slate-50 relative overflow-hidden p-2">
+    <!-- 3. INPUT SECTION (Fills remaining space) -->
+    <section class="flex-[5] bg-slate-50 relative overflow-hidden p-2 min-h-0">
         
         <!-- VIEW A: Fretboard -->
-        <div id="view-guitar" class="w-full h-full flex flex-col justify-center">
-            <div class="w-full bg-white rounded-xl shadow-sm border border-slate-200 p-1 py-4 overflow-x-auto">
-                <div id="fretboard" class="min-w-[340px] select-none">
+        <div id="view-guitar" class="w-full h-full flex flex-col justify-center items-center">
+            <div class="w-full bg-white rounded-xl shadow-sm border border-slate-200 px-1 py-2 flex flex-col justify-center h-full max-h-[260px]">
+                
+                <!-- The Fretboard Grid -->
+                <div id="fretboard" class="w-full flex-1 flex flex-col justify-between select-none">
                     <!-- JS Injected -->
                 </div>
+                
                 <!-- Fret Labels -->
-                <div class="flex text-[9px] uppercase text-slate-400 mt-2 font-bold px-1">
-                    <div style="width: 46px;" class="text-center">Open</div>
+                <div class="flex text-[8px] uppercase text-slate-400 pt-1 font-bold">
+                    <div style="flex: 0 0 12%; text-align: center;">Open</div>
                     <div class="flex-1 text-center">I</div>
                     <div class="flex-1 text-center">II</div>
                     <div class="flex-1 text-center">III</div>
@@ -165,14 +184,21 @@
                     <div class="flex-1 text-center">V</div>
                 </div>
             </div>
-            <p class="text-[10px] text-center text-slate-400 mt-2">Tap any string/fret to play</p>
         </div>
 
         <!-- VIEW B: Piano -->
-        <div id="view-piano" class="hidden w-full h-full flex flex-col justify-center items-center pb-4">
-            <div class="w-full max-w-[360px] h-[160px] bg-white rounded-xl shadow-sm border border-slate-200 p-2 select-none">
+        <div id="view-piano" class="hidden w-full h-full flex flex-col justify-start items-center pt-2">
+            
+            <!-- Octave Selector -->
+            <div class="flex bg-white rounded-lg p-1 shadow-sm border border-slate-200 mb-4 gap-1">
+                <button class="oct-btn px-4 py-2 rounded text-sm text-slate-500 font-medium" id="oct-2" onclick="setOctave(2)">Octave 2</button>
+                <button class="oct-btn px-4 py-2 rounded text-sm text-slate-500 font-medium" id="oct-3" onclick="setOctave(3)">Octave 3</button>
+                <button class="oct-btn px-4 py-2 rounded text-sm text-slate-500 font-medium" id="oct-4" onclick="setOctave(4)">Octave 4</button>
+            </div>
+
+            <!-- Piano Keys -->
+            <div class="w-full max-w-[380px] bg-white rounded-xl shadow-sm border border-slate-200 p-2 select-none">
                 <div class="piano-wrapper">
-                    <!-- White Keys -->
                     <div class="white-key" id="pk-0" onclick="handlePianoInput(0)">C</div>
                     <div class="white-key" id="pk-2" onclick="handlePianoInput(2)">D</div>
                     <div class="white-key" id="pk-4" onclick="handlePianoInput(4)">E</div>
@@ -181,7 +207,6 @@
                     <div class="white-key" id="pk-9" onclick="handlePianoInput(9)">A</div>
                     <div class="white-key" id="pk-11" onclick="handlePianoInput(11)">B</div>
                     
-                    <!-- Black Keys -->
                     <div class="black-key bk-cs" id="pk-1" onclick="handlePianoInput(1)"></div>
                     <div class="black-key bk-ds" id="pk-3" onclick="handlePianoInput(3)"></div>
                     <div class="black-key bk-fs" id="pk-6" onclick="handlePianoInput(6)"></div>
@@ -189,7 +214,8 @@
                     <div class="black-key bk-as" id="pk-10" onclick="handlePianoInput(10)"></div>
                 </div>
             </div>
-            <p class="text-[10px] text-center text-slate-400 mt-4">Pitch Class (Plays lowest available note)</p>
+            
+            <p id="range-warning" class="text-xs text-red-400 mt-2 opacity-0 transition-opacity font-bold">Note out of guitar range</p>
         </div>
 
     </section>
@@ -198,7 +224,12 @@
         // --- CONSTANTS ---
         const STRINGS = [64, 59, 55, 50, 45, 40]; // High E -> Low E
         const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+        const MIN_MIDI = 40; // E2
+        const MAX_MIDI = 69; // A4 (5th fret high E string)
+        
+        // --- STATE ---
         let currentMidi = 40; 
+        let currentOctave = 2; // Default for E2
         let audioCtx = null;
 
         // --- UI LOGIC ---
@@ -212,40 +243,29 @@
             if (tab === 'guitar') {
                 guitarView.classList.remove('hidden');
                 pianoView.classList.add('hidden');
-                guitarBtn.classList.add('bg-white', 'text-blue-600', 'shadow-sm');
-                guitarBtn.classList.remove('text-slate-500');
-                pianoBtn.classList.remove('bg-white', 'text-blue-600', 'shadow-sm');
-                pianoBtn.classList.add('text-slate-500');
+                guitarBtn.className = "flex-1 py-2 rounded text-xs uppercase font-bold tracking-wider transition-colors bg-white text-blue-600 shadow-sm";
+                pianoBtn.className = "flex-1 py-2 rounded text-xs uppercase font-bold tracking-wider transition-colors text-slate-500 hover:bg-white/50";
             } else {
                 guitarView.classList.add('hidden');
                 pianoView.classList.remove('hidden');
-                pianoBtn.classList.add('bg-white', 'text-blue-600', 'shadow-sm');
-                pianoBtn.classList.remove('text-slate-500');
-                guitarBtn.classList.remove('bg-white', 'text-blue-600', 'shadow-sm');
-                guitarBtn.classList.add('text-slate-500');
+                pianoBtn.className = "flex-1 py-2 rounded text-xs uppercase font-bold tracking-wider transition-colors bg-white text-blue-600 shadow-sm";
+                guitarBtn.className = "flex-1 py-2 rounded text-xs uppercase font-bold tracking-wider transition-colors text-slate-500 hover:bg-white/50";
             }
         }
 
-        // --- DATA HELPERS ---
-
-        function getNoteInfo(midi) {
-            return {
-                midi: midi,
-                pitchClass: midi % 12,
-                octave: Math.floor(midi / 12) - 1,
-                name: NOTE_NAMES[midi % 12],
-                isSharp: NOTE_NAMES[midi % 12].includes('#')
-            };
+        function setOctave(oct) {
+            currentOctave = oct;
+            updateOctaveUI();
+            updatePianoKeyAvailability();
         }
 
-        // Find Guitar Position (Prefer lower frets/open strings)
-        function getGuitarPos(midi) {
-            for(let s=0; s<6; s++) {
-                let open = STRINGS[s];
-                let fret = midi - open;
-                if(fret >= 0 && fret <= 5) return { str: s, fret: fret };
-            }
-            return null;
+        function updateOctaveUI() {
+            // Reset buttons
+            [2,3,4].forEach(o => {
+                const btn = document.getElementById(`oct-${o}`);
+                if (o === currentOctave) btn.classList.add('selected');
+                else btn.classList.remove('selected');
+            });
         }
 
         // --- AUDIO ENGINE ---
@@ -262,13 +282,12 @@
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
             
-            // Freq calculation
             osc.frequency.value = 440 * Math.pow(2, (midi - 69) / 12);
-            osc.type = 'triangle'; // Clear tone
+            osc.type = 'triangle';
             
             const now = audioCtx.currentTime;
             gain.gain.setValueAtTime(0, now);
-            gain.gain.linearRampToValueAtTime(0.4, now + 0.02);
+            gain.gain.linearRampToValueAtTime(0.3, now + 0.02);
             gain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
             
             osc.connect(gain);
@@ -285,7 +304,6 @@
             const pos = getGuitarPos(midi);
             const info = getNoteInfo(midi);
 
-            // Library Check
             if(typeof Vex === 'undefined') {
                 container.style.display = 'none';
                 fallback.classList.remove('hidden');
@@ -300,7 +318,6 @@
             try {
                 const { Renderer, Stave, StaveNote, TabStave, TabNote, Formatter, Voice, Accidental } = Vex.Flow;
                 
-                // Use wrapper dimensions
                 const wrapper = document.getElementById('vexflow-wrapper');
                 const w = wrapper.clientWidth;
                 const h = wrapper.clientHeight;
@@ -309,27 +326,23 @@
                 renderer.resize(w, h);
                 const ctx = renderer.getContext();
                 
-                // Centering math
+                // Centering
                 const staveWidth = 260;
                 const x = (w - staveWidth) / 2;
-                const yStandard = (h / 2) - 100; // Position staff in upper middle
-                const yTab = (h / 2) + 10;       // Position tab below it
-
-                // 1. Standard Stave
-                const stave = new Stave(x, yStandard, staveWidth);
+                // Calculate vertical center
+                const centerY = h / 2;
+                
+                // Standard: Move up
+                const stave = new Stave(x, centerY - 80, staveWidth);
                 stave.addClef("treble");
                 stave.setContext(ctx).draw();
                 
-                // 2. Tab Stave
-                const tabStave = new TabStave(x, yTab, staveWidth);
+                // Tab: Move down
+                const tabStave = new TabStave(x, centerY + 20, staveWidth);
                 tabStave.addClef("tab");
                 tabStave.setContext(ctx).draw();
 
-                // 3. Notes
-                // GUITAR TRANSPOSITION LOGIC:
-                // Guitar sounds 1 octave lower than written.
-                // If actual audio pitch is E2 (midi 40), we write E3 on staff.
-                // VexFlow key format: "e/3"
+                // Notes (Transposed for Guitar: +1 Octave visual)
                 const writtenOctave = info.octave + 1; 
                 const vfKey = `${info.name.toLowerCase()}/${writtenOctave}`;
                 
@@ -342,14 +355,12 @@
 
                 if(info.isSharp) note.addModifier(new Accidental("#"));
                 
-                // VexFlow strings are 1-based (1=High E)
                 const tabNote = new TabNote({
                     positions: [{ str: pos.str + 1, fret: pos.fret }],
                     duration: "w",
                     align_center: true
                 });
 
-                // 4. Draw
                 const voice = new Voice({num_beats: 4, beat_value: 4});
                 voice.addTickables([note]);
                 
@@ -367,7 +378,26 @@
             }
         }
 
-        // --- FRETBOARD BUILDER ---
+        // --- FRETBOARD & DATA ---
+
+        function getNoteInfo(midi) {
+            return {
+                midi: midi,
+                pitchClass: midi % 12,
+                octave: Math.floor(midi / 12) - 1,
+                name: NOTE_NAMES[midi % 12],
+                isSharp: NOTE_NAMES[midi % 12].includes('#')
+            };
+        }
+
+        function getGuitarPos(midi) {
+            for(let s=0; s<6; s++) {
+                let open = STRINGS[s];
+                let fret = midi - open;
+                if(fret >= 0 && fret <= 5) return { str: s, fret: fret };
+            }
+            return null;
+        }
 
         function buildFretboard() {
             const fb = document.getElementById('fretboard');
@@ -375,18 +405,25 @@
 
             for(let s=0; s<6; s++) {
                 const row = document.createElement('div');
-                row.className = "flex w-full relative h-10 items-center"; // Taller touch target
+                // Use flex grow to fill height evenly
+                row.className = "flex w-full relative items-center flex-1"; 
                 
-                // String visual
+                // String Line
                 const line = document.createElement('div');
                 line.className = "string-line";
-                line.style.height = (s * 0.5 + 1) + "px"; // Thicker low strings
+                line.style.height = (s * 0.5 + 1) + "px";
                 row.appendChild(line);
 
                 for(let f=0; f<=5; f++) {
                     const cell = document.createElement('div');
-                    let cls = "fret-cell flex-1 h-full flex items-center justify-center ";
-                    if(f===0) cls += "nut flex-none w-[46px] ";
+                    // Width logic: Nut is approx 12%, others equal flex
+                    let cls = "fret-cell h-full flex items-center justify-center ";
+                    if(f===0) {
+                        cls += "nut";
+                        cell.style.flex = "0 0 12%"; // Fixed % width for nut
+                    } else {
+                        cell.style.flex = "1";
+                    }
                     cell.className = cls;
 
                     const midi = STRINGS[s] + f;
@@ -405,76 +442,94 @@
         // --- MAIN LOGIC ---
 
         function updateState(midi, playSound = true) {
-            currentMidi = midi;
-            const pos = getGuitarPos(midi);
-            const info = getNoteInfo(midi);
+            if (midi < MIN_MIDI || midi > MAX_MIDI) {
+                showRangeWarning();
+                return;
+            }
 
-            if(!pos) return;
+            currentMidi = midi;
+            const info = getNoteInfo(midi);
+            const pos = getGuitarPos(midi);
 
             // Audio
             if(playSound) playTone(midi);
 
-            // Display
+            // Update State Vars
+            currentOctave = info.octave;
+            updateOctaveUI();
+            updatePianoKeyAvailability();
+
+            // Text
             document.getElementById('note-display').innerText = info.name;
 
-            // Render
+            // Notation
             renderNotation(midi);
 
-            // Highlights - Fretboard
+            // Fretboard Highlight
             document.querySelectorAll('.fret-cell').forEach(c => c.classList.remove('active'));
-            const activeCell = document.getElementById(`fret-cell-${pos.str}-${pos.fret}`);
-            if(activeCell) activeCell.classList.add('active');
+            if(pos) {
+                const activeCell = document.getElementById(`fret-cell-${pos.str}-${pos.fret}`);
+                if(activeCell) activeCell.classList.add('active');
+            }
 
-            // Highlights - Piano
+            // Piano Highlight
             document.querySelectorAll('.white-key, .black-key').forEach(k => k.classList.remove('active'));
             const activeKey = document.getElementById(`pk-${info.pitchClass}`);
             if(activeKey) activeKey.classList.add('active');
         }
 
+        // Handle Piano Input (Pitch Class + Current Octave)
         function handlePianoInput(pitchClass) {
-            // Find lowest valid MIDI note for this pitch class on guitar
-            // Range 40 -> 69 (approx)
-            let target = -1;
-            for(let m=40; m<=69; m++) {
-                if(m % 12 === pitchClass) {
-                    target = m;
-                    break;
+            const targetMidi = (currentOctave + 1) * 12 + pitchClass;
+            updateState(targetMidi, true);
+        }
+
+        // Visual feedback for keys that are out of range for the *current* octave
+        function updatePianoKeyAvailability() {
+            // Check all 12 pitch classes for the current octave
+            for (let pc = 0; pc < 12; pc++) {
+                const midi = (currentOctave + 1) * 12 + pc;
+                const el = document.getElementById(`pk-${pc}`);
+                
+                if (midi < MIN_MIDI || midi > MAX_MIDI) {
+                    el.classList.add('disabled');
+                    el.style.opacity = '0.5';
+                } else {
+                    el.classList.remove('disabled');
+                    el.style.opacity = '1';
                 }
             }
-            if(target !== -1) updateState(target, true);
+        }
+
+        function showRangeWarning() {
+            const w = document.getElementById('range-warning');
+            w.style.opacity = '1';
+            setTimeout(() => w.style.opacity = '0', 1000);
         }
 
         // --- INIT ---
 
         window.onload = function() {
             buildFretboard();
-            
-            // Wait for library
+            setOctave(2); // Start at lowest octave
+
+            // Check Library
             const status = document.getElementById('loading-status');
-            let checks = 0;
             const intv = setInterval(() => {
-                checks++;
                 if(typeof Vex !== 'undefined') {
                     clearInterval(intv);
                     status.innerText = "Ready!";
                     status.className = "mt-6 text-xs text-green-400 font-bold uppercase";
-                    // Initial render (no sound)
                     updateState(40, false);
-                } else if(checks > 20) {
-                    clearInterval(intv);
-                    status.innerText = "Notation not loaded (Check Connection)";
-                    status.className = "mt-6 text-xs text-red-400";
                 }
             }, 200);
 
-            // Start Handler
             document.getElementById('start-btn').onclick = function() {
                 initAudio();
                 document.getElementById('start-overlay').style.display = 'none';
                 updateState(currentMidi, true);
             };
 
-            // Resize Handler for VexFlow
             let resizeTimer;
             window.addEventListener('resize', () => {
                 clearTimeout(resizeTimer);
