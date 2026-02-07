@@ -11,7 +11,7 @@
         body {
             overscroll-behavior: none;
             touch-action: manipulation;
-            overflow: hidden; /* Prevent global scroll */
+            overflow: hidden; 
         }
         
         /* --- Piano Styling --- */
@@ -86,7 +86,6 @@
             position: relative;
             border-right: 1px solid #cbd5e1;
             cursor: pointer;
-            /* Flex basis will handle width */
         }
         .nut {
             background-color: #f1f5f9;
@@ -114,6 +113,20 @@
             font-weight: bold;
             box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
         }
+
+        /* Quiz Styles */
+        .quiz-active .fret-cell.active .fret-marker,
+        .quiz-active .white-key.active,
+        .quiz-active .black-key.active {
+            background-color: transparent !important; /* Hide answer */
+            box-shadow: none !important;
+            color: transparent !important;
+        }
+        /* Except when we explicitly want to reveal */
+        .quiz-reveal .fret-cell.active .fret-marker {
+            background-color: #22c55e !important; /* Green for reveal */
+            box-shadow: 0 0 8px #22c55e !important;
+        }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800 h-screen w-full flex flex-col overflow-hidden">
@@ -128,16 +141,27 @@
         <div id="loading-status" class="mt-6 text-xs text-slate-500 font-mono">Loading Notation Engine...</div>
     </div>
 
-    <!-- 1. NOTATION SECTION (Fixed flex ratio) -->
-    <section class="flex-[4] bg-white w-full flex flex-col relative shadow-md z-10 min-h-0">
-        <!-- Header -->
-        <div class="absolute top-0 left-0 w-full p-2 flex justify-between items-start z-20 pointer-events-none">
-            <span class="text-[10px] font-bold uppercase text-slate-400 bg-white/80 px-2 rounded backdrop-blur">Standard & Tab</span>
-            <div id="note-display" class="bg-blue-600 text-white px-3 py-1 rounded-lg shadow font-bold text-xl min-w-[50px] text-center pointer-events-auto">
-                E
-            </div>
+    <!-- HEADER / CONTROLS -->
+    <div class="bg-white shadow-sm z-20 flex justify-between items-center p-2 border-b border-slate-200">
+        <button id="quiz-toggle" onclick="toggleQuizMode()" class="bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-xs font-bold border border-amber-200 shadow-sm active:scale-95 transition">
+            START QUIZ
+        </button>
+        
+        <div id="note-display" class="bg-blue-600 text-white px-4 py-1 rounded-lg shadow font-bold text-lg min-w-[60px] text-center">
+            E
         </div>
 
+        <div class="w-[80px]"></div> <!-- Spacer for center alignment -->
+    </div>
+
+    <!-- QUIZ FEEDBACK BANNER (Hidden by default) -->
+    <div id="quiz-banner" class="hidden bg-slate-800 text-white text-center py-2 text-sm font-bold absolute top-[50px] left-0 right-0 z-30 shadow-lg">
+        <span id="quiz-msg">Find this note!</span>
+        <button id="next-btn" onclick="nextQuestion()" class="hidden ml-2 bg-green-500 text-white px-2 py-0.5 rounded text-xs uppercase shadow">Next</button>
+    </div>
+
+    <!-- 1. NOTATION SECTION -->
+    <section class="flex-[4] bg-white w-full flex flex-col relative shadow-md z-10 min-h-0">
         <!-- VexFlow Container -->
         <div id="vexflow-wrapper" class="w-full h-full flex items-center justify-center overflow-hidden p-2">
             <div id="vexflow-container" class="w-full h-full flex justify-center items-center"></div>
@@ -162,18 +186,15 @@
         </button>
     </div>
 
-    <!-- 3. INPUT SECTION (Fills remaining space) -->
-    <section class="flex-[5] bg-slate-50 relative overflow-hidden p-2 min-h-0">
+    <!-- 3. INPUT SECTION -->
+    <section id="input-section" class="flex-[5] bg-slate-50 relative overflow-hidden p-2 min-h-0">
         
         <!-- VIEW A: Fretboard -->
         <div id="view-guitar" class="w-full h-full flex flex-col justify-center items-center">
             <div class="w-full bg-white rounded-xl shadow-sm border border-slate-200 px-1 py-2 flex flex-col justify-center h-full max-h-[260px]">
-                
-                <!-- The Fretboard Grid -->
                 <div id="fretboard" class="w-full flex-1 flex flex-col justify-between select-none">
                     <!-- JS Injected -->
                 </div>
-                
                 <!-- Fret Labels -->
                 <div class="flex text-[8px] uppercase text-slate-400 pt-1 font-bold">
                     <div style="flex: 0 0 12%; text-align: center;">Open</div>
@@ -188,7 +209,6 @@
 
         <!-- VIEW B: Piano -->
         <div id="view-piano" class="hidden w-full h-full flex flex-col justify-start items-center pt-2">
-            
             <!-- Octave Selector -->
             <div class="flex bg-white rounded-lg p-1 shadow-sm border border-slate-200 mb-4 gap-1">
                 <button class="oct-btn px-4 py-2 rounded text-sm text-slate-500 font-medium" id="oct-2" onclick="setOctave(2)">Octave 2</button>
@@ -217,20 +237,26 @@
             
             <p id="range-warning" class="text-xs text-red-400 mt-2 opacity-0 transition-opacity font-bold">Note out of guitar range</p>
         </div>
-
     </section>
 
     <script>
         // --- CONSTANTS ---
         const STRINGS = [64, 59, 55, 50, 45, 40]; // High E -> Low E
         const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+        const ENHARMONICS = ['C', 'C#/Db', 'D', 'D#/Eb', 'E', 'F', 'F#/Gb', 'G', 'G#/Ab', 'A', 'A#/Bb', 'B'];
         const MIN_MIDI = 40; // E2
-        const MAX_MIDI = 69; // A4 (5th fret high E string)
+        const MAX_MIDI = 69; // A4 
         
         // --- STATE ---
         let currentMidi = 40; 
-        let currentOctave = 2; // Default for E2
+        let currentOctave = 2;
         let audioCtx = null;
+        
+        // Quiz State
+        let isQuizMode = false;
+        let quizTarget = null;
+        let quizAttempts = 0;
+        let isQuizRevealed = false;
 
         // --- UI LOGIC ---
 
@@ -260,7 +286,6 @@
         }
 
         function updateOctaveUI() {
-            // Reset buttons
             [2,3,4].forEach(o => {
                 const btn = document.getElementById(`oct-${o}`);
                 if (o === currentOctave) btn.classList.add('selected');
@@ -275,30 +300,227 @@
             if(audioCtx.state === 'suspended') audioCtx.resume();
         }
 
-        function playTone(midi) {
+        function playTone(midi, type = 'normal') {
             if(!audioCtx) return;
             initAudio();
             
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
             
-            osc.frequency.value = 440 * Math.pow(2, (midi - 69) / 12);
-            osc.type = 'triangle';
+            let freq = 440 * Math.pow(2, (midi - 69) / 12);
+            let duration = 1.5;
+
+            // FX for Quiz
+            if (type === 'ding') {
+                osc.type = 'sine';
+                freq = 880; // High Ding
+                duration = 0.8;
+                gain.gain.setValueAtTime(0, audioCtx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.5, audioCtx.currentTime + 0.05);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+            } else if (type === 'buzz') {
+                osc.type = 'sawtooth';
+                freq = 150; // Low buzz
+                duration = 0.4;
+                gain.gain.setValueAtTime(0, audioCtx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.3, audioCtx.currentTime + 0.05);
+                gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + duration);
+            } else {
+                // Normal instrument tone
+                osc.type = 'triangle';
+                osc.frequency.value = freq;
+                gain.gain.setValueAtTime(0, audioCtx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.3, audioCtx.currentTime + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 1.2);
+            }
             
-            const now = audioCtx.currentTime;
-            gain.gain.setValueAtTime(0, now);
-            gain.gain.linearRampToValueAtTime(0.3, now + 0.02);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
-            
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
             osc.connect(gain);
             gain.connect(audioCtx.destination);
-            osc.start(now);
-            osc.stop(now + 1.5);
+            osc.start(audioCtx.currentTime);
+            osc.stop(audioCtx.currentTime + duration);
+        }
+
+        // --- QUIZ LOGIC ---
+
+        function toggleQuizMode() {
+            isQuizMode = !isQuizMode;
+            const btn = document.getElementById('quiz-toggle');
+            const banner = document.getElementById('quiz-banner');
+            const container = document.getElementById('input-section');
+
+            if (isQuizMode) {
+                // Start Quiz
+                btn.textContent = "STOP QUIZ";
+                btn.className = "bg-red-100 text-red-700 px-3 py-1 rounded-full text-xs font-bold border border-red-200 shadow-sm active:scale-95 transition";
+                banner.classList.remove('hidden');
+                container.classList.add('quiz-active'); // Hides visual markers
+                nextQuestion();
+            } else {
+                // End Quiz
+                btn.textContent = "START QUIZ";
+                btn.className = "bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-xs font-bold border border-amber-200 shadow-sm active:scale-95 transition";
+                banner.classList.add('hidden');
+                container.classList.remove('quiz-active');
+                container.classList.remove('quiz-reveal');
+                updateState(currentMidi); // Restore normal view
+            }
+        }
+
+        function nextQuestion() {
+            // Pick random note
+            quizTarget = Math.floor(Math.random() * (MAX_MIDI - MIN_MIDI + 1)) + MIN_MIDI;
+            quizAttempts = 0;
+            isQuizRevealed = false;
+            
+            // Update UI for question
+            document.getElementById('input-section').classList.remove('quiz-reveal');
+            document.getElementById('input-section').classList.add('quiz-active');
+            document.getElementById('quiz-msg').textContent = "Play this note!";
+            document.getElementById('quiz-msg').className = "text-white";
+            document.getElementById('next-btn').classList.add('hidden');
+            
+            // Show target on staff (but logic will hide tab)
+            updateState(quizTarget, true); 
+        }
+
+        function checkAnswer(inputMidi) {
+            if (inputMidi === quizTarget) {
+                // Correct!
+                playTone(0, 'ding');
+                document.getElementById('quiz-msg').textContent = "Good Job! Correct!";
+                document.getElementById('quiz-msg').className = "text-green-300";
+                document.getElementById('next-btn').classList.remove('hidden');
+                
+                // Show the user what they hit (reveal briefly)
+                document.getElementById('input-section').classList.remove('quiz-active');
+                updateState(inputMidi, false);
+
+            } else {
+                // Incorrect
+                quizAttempts++;
+                playTone(inputMidi); // Hear the wrong note
+                const wrongName = ENHARMONICS[inputMidi % 12];
+                
+                if (quizAttempts < 2) {
+                    document.getElementById('quiz-msg').textContent = `That was ${wrongName}. Try again!`;
+                    document.getElementById('quiz-msg').className = "text-amber-300";
+                } else {
+                    // Fail - Reveal Answer
+                    playTone(0, 'buzz');
+                    document.getElementById('quiz-msg').textContent = `Nice try. Here is ${ENHARMONICS[quizTarget % 12]}`;
+                    document.getElementById('quiz-msg').className = "text-red-300";
+                    document.getElementById('next-btn').classList.remove('hidden');
+                    
+                    // Reveal answer mode
+                    isQuizRevealed = true;
+                    document.getElementById('input-section').classList.remove('quiz-active');
+                    document.getElementById('input-section').classList.add('quiz-reveal');
+                    updateState(quizTarget, false); // Show correct markers
+                }
+            }
+        }
+
+        // --- MAIN LOGIC ---
+
+        function updateState(midi, playSound = true) {
+            if (midi < MIN_MIDI || midi > MAX_MIDI) {
+                showRangeWarning();
+                return;
+            }
+
+            // In Quiz Mode, we don't update currentMidi global unless revealed
+            // to prevent the notation from changing to the wrong note the user hit.
+            if (!isQuizMode || isQuizRevealed) {
+                currentMidi = midi;
+            }
+
+            const info = getNoteInfo(midi);
+            const pos = getGuitarPos(midi);
+
+            // Audio
+            if(playSound) playTone(midi);
+
+            // Update State Vars (if not hidden quiz)
+            if (!isQuizMode || isQuizRevealed) {
+                currentOctave = info.octave;
+                updateOctaveUI();
+                updatePianoKeyAvailability();
+            }
+
+            // Text Display
+            // In quiz, we always show target name
+            const displayMidi = (isQuizMode && !isQuizRevealed) ? quizTarget : midi;
+            const displayInfo = getNoteInfo(displayMidi);
+            document.getElementById('note-display').innerText = displayInfo.enharmonic; // Use full name
+
+            // Notation
+            // If Quiz Mode and NOT revealed, hide TAB.
+            const hideTab = isQuizMode && !isQuizRevealed;
+            renderNotation(displayMidi, hideTab);
+
+            // Markers (Visuals)
+            // If Quiz Active (and not revealed), CSS hides markers (.quiz-active)
+            // But we still set the 'active' class so logic works when CSS toggles
+            
+            // Fretboard
+            document.querySelectorAll('.fret-cell').forEach(c => c.classList.remove('active'));
+            if(pos) {
+                const activeCell = document.getElementById(`fret-cell-${pos.str}-${pos.fret}`);
+                if(activeCell) activeCell.classList.add('active');
+            }
+
+            // Piano
+            document.querySelectorAll('.white-key, .black-key').forEach(k => k.classList.remove('active'));
+            const activeKey = document.getElementById(`pk-${info.pitchClass}`);
+            if(activeKey) activeKey.classList.add('active');
+        }
+
+        function handleInput(midi) {
+            if (isQuizMode && !isQuizRevealed && document.getElementById('next-btn').classList.contains('hidden')) {
+                checkAnswer(midi);
+            } else {
+                updateState(midi, true);
+            }
+        }
+
+        // Handle Piano Input
+        function handlePianoInput(pitchClass) {
+            // If in quiz mode, we need to guess the octave if the user hasn't selected one
+            // But we have an octave selector. Use current.
+            const targetMidi = (currentOctave + 1) * 12 + pitchClass;
+            handleInput(targetMidi);
+        }
+
+        function handleGuitarInput(midi) {
+            handleInput(midi);
+        }
+
+        // --- DATA HELPERS ---
+
+        function getNoteInfo(midi) {
+            return {
+                midi: midi,
+                pitchClass: midi % 12,
+                octave: Math.floor(midi / 12) - 1,
+                name: NOTE_NAMES[midi % 12],
+                enharmonic: ENHARMONICS[midi % 12], // NEW: A# / Bb
+                isSharp: NOTE_NAMES[midi % 12].includes('#')
+            };
+        }
+
+        function getGuitarPos(midi) {
+            for(let s=0; s<6; s++) {
+                let open = STRINGS[s];
+                let fret = midi - open;
+                if(fret >= 0 && fret <= 5) return { str: s, fret: fret };
+            }
+            return null;
         }
 
         // --- VEXFLOW ENGINE ---
 
-        function renderNotation(midi) {
+        function renderNotation(midi, hideTab = false) {
             const container = document.getElementById('vexflow-container');
             const fallback = document.getElementById('notation-fallback');
             const pos = getGuitarPos(midi);
@@ -318,33 +540,21 @@
             try {
                 const { Renderer, Stave, StaveNote, TabStave, TabNote, Formatter, Voice, Accidental } = Vex.Flow;
                 
-                // FIXED DIMENSIONS FOR SCALING
-                // We define a "virtual canvas" where we know everything fits perfectly.
-                // 320px wide, 250px high.
                 const baseW = 320;
                 const baseH = 250; 
-
                 const renderer = new Renderer(container, Renderer.Backends.SVG);
                 renderer.resize(baseW, baseH);
                 const ctx = renderer.getContext();
                 
-                // Center the staves in the virtual box
-                // Stave width 260 leaves 30px margin on sides
                 const staveWidth = 260;
                 const x = (baseW - staveWidth) / 2;
                 
-                // Vertical spacing
-                // UPDATED: Standard stave at y=10 (was 30), Tab stave at y=110 (was 130)
-                // This shifts everything UP by 20px to prevent bottom clipping
+                // Standard Stave
                 const stave = new Stave(x, 10, staveWidth);
                 stave.addClef("treble");
                 stave.setContext(ctx).draw();
                 
-                const tabStave = new TabStave(x, 110, staveWidth);
-                tabStave.addClef("tab");
-                tabStave.setContext(ctx).draw();
-
-                // Notes
+                // Standard Note
                 const writtenOctave = info.octave + 1; 
                 const vfKey = `${info.name.toLowerCase()}/${writtenOctave}`;
                 
@@ -357,32 +567,43 @@
 
                 if(info.isSharp) note.addModifier(new Accidental("#"));
                 
-                const tabNote = new TabNote({
-                    positions: [{ str: pos.str + 1, fret: pos.fret }],
-                    duration: "w",
-                    align_center: true
-                });
-
                 const voice = new Voice({num_beats: 4, beat_value: 4});
                 voice.addTickables([note]);
-                
-                const tabVoice = new Voice({num_beats: 4, beat_value: 4});
-                tabVoice.addTickables([tabNote]);
-
                 new Formatter().joinVoices([voice]).format([voice], staveWidth - 50);
-                new Formatter().joinVoices([tabVoice]).format([tabVoice], staveWidth - 50);
-
                 voice.draw(ctx, stave);
-                tabVoice.draw(ctx, tabStave);
 
-                // RESPONSIVE SCALING MAGIC
-                // Set viewBox to the base dimensions so CSS can scale it
+                // Tab Stave (Conditionally Rendered)
+                if (!hideTab) {
+                    const tabStave = new TabStave(x, 110, staveWidth);
+                    tabStave.addClef("tab");
+                    tabStave.setContext(ctx).draw();
+
+                    const tabNote = new TabNote({
+                        positions: [{ str: pos.str + 1, fret: pos.fret }],
+                        duration: "w",
+                        align_center: true
+                    });
+
+                    const tabVoice = new Voice({num_beats: 4, beat_value: 4});
+                    tabVoice.addTickables([tabNote]);
+                    new Formatter().joinVoices([tabVoice]).format([tabVoice], staveWidth - 50);
+                    tabVoice.draw(ctx, tabStave);
+                } else {
+                    // Draw Empty Tab Stave for visual consistency (so layout doesn't jump)
+                    const tabStave = new TabStave(x, 110, staveWidth);
+                    tabStave.addClef("tab");
+                    tabStave.setContext(ctx).draw();
+                    // Optional: Draw a question mark? 
+                    // ctx.font = "30px Arial"; ctx.fillText("?", baseW/2, 170);
+                }
+
+                // Scaling
                 const svg = container.querySelector('svg');
                 if (svg) {
                     svg.setAttribute('viewBox', `0 0 ${baseW} ${baseH}`);
                     svg.style.width = '100%';
                     svg.style.height = '100%';
-                    svg.style.maxHeight = '100%'; // Ensure it respects container height
+                    svg.style.maxHeight = '100%';
                 }
 
             } catch(e) {
@@ -390,26 +611,7 @@
             }
         }
 
-        // --- FRETBOARD & DATA ---
-
-        function getNoteInfo(midi) {
-            return {
-                midi: midi,
-                pitchClass: midi % 12,
-                octave: Math.floor(midi / 12) - 1,
-                name: NOTE_NAMES[midi % 12],
-                isSharp: NOTE_NAMES[midi % 12].includes('#')
-            };
-        }
-
-        function getGuitarPos(midi) {
-            for(let s=0; s<6; s++) {
-                let open = STRINGS[s];
-                let fret = midi - open;
-                if(fret >= 0 && fret <= 5) return { str: s, fret: fret };
-            }
-            return null;
-        }
+        // --- FRETBOARD BUILDER ---
 
         function buildFretboard() {
             const fb = document.getElementById('fretboard');
@@ -417,10 +619,8 @@
 
             for(let s=0; s<6; s++) {
                 const row = document.createElement('div');
-                // Use flex grow to fill height evenly
                 row.className = "flex w-full relative items-center flex-1"; 
                 
-                // String Line
                 const line = document.createElement('div');
                 line.className = "string-line";
                 line.style.height = (s * 0.5 + 1) + "px";
@@ -428,18 +628,17 @@
 
                 for(let f=0; f<=5; f++) {
                     const cell = document.createElement('div');
-                    // Width logic: Nut is approx 12%, others equal flex
                     let cls = "fret-cell h-full flex items-center justify-center ";
                     if(f===0) {
                         cls += "nut";
-                        cell.style.flex = "0 0 12%"; // Fixed % width for nut
+                        cell.style.flex = "0 0 12%"; 
                     } else {
                         cell.style.flex = "1";
                     }
                     cell.className = cls;
 
                     const midi = STRINGS[s] + f;
-                    cell.onclick = () => updateState(midi, true);
+                    cell.onclick = () => handleGuitarInput(midi);
                     cell.id = `fret-cell-${s}-${f}`;
 
                     const marker = document.createElement('div');
@@ -451,58 +650,10 @@
             }
         }
 
-        // --- MAIN LOGIC ---
-
-        function updateState(midi, playSound = true) {
-            if (midi < MIN_MIDI || midi > MAX_MIDI) {
-                showRangeWarning();
-                return;
-            }
-
-            currentMidi = midi;
-            const info = getNoteInfo(midi);
-            const pos = getGuitarPos(midi);
-
-            // Audio
-            if(playSound) playTone(midi);
-
-            // Update State Vars
-            currentOctave = info.octave;
-            updateOctaveUI();
-            updatePianoKeyAvailability();
-
-            // Text
-            document.getElementById('note-display').innerText = info.name;
-
-            // Notation
-            renderNotation(midi);
-
-            // Fretboard Highlight
-            document.querySelectorAll('.fret-cell').forEach(c => c.classList.remove('active'));
-            if(pos) {
-                const activeCell = document.getElementById(`fret-cell-${pos.str}-${pos.fret}`);
-                if(activeCell) activeCell.classList.add('active');
-            }
-
-            // Piano Highlight
-            document.querySelectorAll('.white-key, .black-key').forEach(k => k.classList.remove('active'));
-            const activeKey = document.getElementById(`pk-${info.pitchClass}`);
-            if(activeKey) activeKey.classList.add('active');
-        }
-
-        // Handle Piano Input (Pitch Class + Current Octave)
-        function handlePianoInput(pitchClass) {
-            const targetMidi = (currentOctave + 1) * 12 + pitchClass;
-            updateState(targetMidi, true);
-        }
-
-        // Visual feedback for keys that are out of range for the *current* octave
         function updatePianoKeyAvailability() {
-            // Check all 12 pitch classes for the current octave
             for (let pc = 0; pc < 12; pc++) {
                 const midi = (currentOctave + 1) * 12 + pc;
                 const el = document.getElementById(`pk-${pc}`);
-                
                 if (midi < MIN_MIDI || midi > MAX_MIDI) {
                     el.classList.add('disabled');
                     el.style.opacity = '0.5';
@@ -523,9 +674,8 @@
 
         window.onload = function() {
             buildFretboard();
-            setOctave(2); // Start at lowest octave
+            setOctave(2); 
 
-            // Check Library
             const status = document.getElementById('loading-status');
             const intv = setInterval(() => {
                 if(typeof Vex !== 'undefined') {
